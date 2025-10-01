@@ -37,6 +37,8 @@ class AddCompaniesRequest(BaseModel):
 class AddCompaniesBulkRequest(BaseModel):
     company_ids: List[int]
     email: Optional[EmailStr] = None
+    source_collection_id: Optional[uuid.UUID] = None
+    limit_n: Optional[int] = None
 
 
 class JobStatusResponse(BaseModel):
@@ -171,13 +173,27 @@ def add_companies_bulk_to_collection(
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
     
+    # Determine total quickly without fetching all IDs on client
+    if request.company_ids:
+        total_count = len(request.company_ids)
+    elif request.source_collection_id:
+        # count companies in the source collection
+        total_q = (
+            db.query(database.CompanyCollectionAssociation)
+            .filter(database.CompanyCollectionAssociation.collection_id == request.source_collection_id)
+        )
+        total_in_src = total_q.count()
+        total_count = min(total_in_src, request.limit_n) if request.limit_n else total_in_src
+    else:
+        total_count = 0
+
     # Create job
     job_id = uuid.uuid4()
     job = database.Job(
         id=job_id,
         status="running",
         progress=0,
-        total=len(request.company_ids),
+        total=total_count,
         current=0,
         email=request.email
     )
@@ -193,7 +209,12 @@ def add_companies_bulk_to_collection(
     # Start background task
     background_tasks.add_task(
         process_bulk_operation,
-        job_id, request.company_ids, collection_id, request.email
+        job_id,
+        request.company_ids,
+        collection_id,
+        request.email,
+        request.source_collection_id,
+        request.limit_n,
     )
     
     return AddCompaniesBulkResponse(
@@ -257,11 +278,21 @@ def list_active_jobs(db: Session = Depends(database.get_db)):
     return items
 
 
-def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection_id: uuid.UUID, email: Optional[str] = None):
+def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection_id: uuid.UUID, email: Optional[str] = None, source_collection_id: Optional[uuid.UUID] = None, limit_n: Optional[int] = None):
     """Background task to process bulk company addition with throttle respect"""
     db = database.SessionLocal()
     
     try:
+        # If client didn't send IDs, build them server-side for faster init
+        if not company_ids and source_collection_id:
+            query = (
+                db.query(database.CompanyCollectionAssociation.company_id)
+                .filter(database.CompanyCollectionAssociation.collection_id == source_collection_id)
+            )
+            if limit_n:
+                query = query.limit(limit_n)
+            company_ids = [row[0] for row in query.all()]
+
         total = len(company_ids)
         # Log entry
         try:
