@@ -15,6 +15,8 @@ interface ProgressModalProps {
   total: number;
   status: string;
   onCancel?: () => void;
+  added?: number;
+  skippedDuplicates?: number;
 }
 
 const ProgressModal = ({
@@ -24,6 +26,8 @@ const ProgressModal = ({
   total,
   status,
   onCancel,
+  added,
+  skippedDuplicates,
 }: ProgressModalProps) => {
   const formatNumber = (num: number) => num.toLocaleString();
   
@@ -40,8 +44,13 @@ const ProgressModal = ({
         </Box>
         
         <Typography variant="h6" sx={{ mb: 1 }}>
-          {formatNumber(current)} of {formatNumber(total)} companies added
+          {formatNumber(added ?? current)} of {formatNumber(total)} companies added
         </Typography>
+        {status === 'completed' && typeof skippedDuplicates === 'number' && skippedDuplicates > 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Skipped as duplicates: {formatNumber(skippedDuplicates)}
+          </Typography>
+        )}
         
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Progress: {progress}%

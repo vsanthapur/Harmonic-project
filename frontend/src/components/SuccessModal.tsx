@@ -14,6 +14,8 @@ interface SuccessModalProps {
   companiesAdded: number;
   fromCollection: string;
   toCollection: string;
+  totalRequested?: number;
+  duplicates?: number;
 }
 
 const SuccessModal = ({
@@ -22,6 +24,8 @@ const SuccessModal = ({
   companiesAdded,
   fromCollection,
   toCollection,
+  totalRequested,
+  duplicates,
 }: SuccessModalProps) => {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -35,6 +39,9 @@ const SuccessModal = ({
         <Typography variant="body1" sx={{ mb: 2 }}>
           Successfully added <strong>{companiesAdded.toLocaleString()}</strong> companies from{' '}
           <strong>{fromCollection}</strong> to <strong>{toCollection}</strong>.
+          {typeof duplicates === 'number' && (
+            <> ({duplicates.toLocaleString()} were already in the collection)</>
+          )}
         </Typography>
         
         <Typography variant="body2" color="text.secondary">

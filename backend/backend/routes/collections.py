@@ -1,4 +1,5 @@
 import uuid
+import time
 from datetime import datetime
 from typing import List, Optional
 
@@ -44,6 +45,8 @@ class JobStatusResponse(BaseModel):
     progress: int
     current: int
     total: int
+    added: Optional[int] = None
+    skipped_duplicates: Optional[int] = None
 
 
 class AddCompaniesResponse(BaseModel):
@@ -143,6 +146,9 @@ def add_companies_to_collection(
             db.commit()
             companies_added += 1
             
+            # Ensure 100ms throttle even for immediate adds
+            time.sleep(0.1)
+            
         except Exception as e:
             errors.append(f"Failed to add company {company_id}: {str(e)}")
     
@@ -178,6 +184,12 @@ def add_companies_bulk_to_collection(
     db.add(job)
     db.commit()
     
+    # Log job start
+    try:
+        print(f"Job {job_id} started: total={len(request.company_ids)} to collection {collection_id}", flush=True)
+    except Exception:
+        pass
+
     # Start background task
     background_tasks.add_task(
         process_bulk_operation,
@@ -201,12 +213,18 @@ def get_job_status(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
+    # Derive added and skipped for UI without schema changes
+    added = job.current or 0
+    total = job.total or 0
+    skipped = max(total - added, 0)
     return JobStatusResponse(
         job_id=job.id,
         status=job.status,
         progress=job.progress,
         current=job.current,
-        total=job.total
+        total=job.total,
+        added=added,
+        skipped_duplicates=skipped
     )
 
 
@@ -216,6 +234,11 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
     
     try:
         total = len(company_ids)
+        # Log entry
+        try:
+            print(f"Job {job_id}: processing started (total={total})", flush=True)
+        except Exception:
+            pass
         companies_added = 0
         
         for i, company_id in enumerate(company_ids):
@@ -242,16 +265,21 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
             db.commit()
             companies_added += 1
             
-            # Log progress every 100 companies
-            if companies_added % 100 == 0:
-                print(f"Job {job_id}: Added {companies_added} companies so far...")
+            # Add explicit 100ms sleep to ensure throttle compliance
+            time.sleep(0.1)
             
-            # Update progress every 100 companies or at the end
-            if (i + 1) % 100 == 0 or (i + 1) == total:
-                progress = int(((i + 1) / total) * 100)
-                
+            # Log progress every 100 companies (and once at first add)
+            if companies_added == 1 or companies_added % 100 == 0:
+                try:
+                    print(f"Job {job_id}: Added {companies_added} companies so far...", flush=True)
+                except Exception:
+                    pass
+
+            # Update progress every 10 companies or at the end for smoother UI updates
+            if (i + 1) % 10 == 0 or (i + 1) == total:
+                progress = int((companies_added / total) * 100) if total > 0 else 100
                 job = db.query(database.Job).get(job_id)
-                job.current = i + 1
+                job.current = companies_added
                 job.progress = progress
                 db.commit()
         
@@ -260,6 +288,10 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
         job.status = "completed"
         job.progress = 100
         db.commit()
+        try:
+            print(f"Job {job_id} completed successfully: total_added={companies_added}", flush=True)
+        except Exception:
+            pass
         
         # Send email notification if provided
         if email:

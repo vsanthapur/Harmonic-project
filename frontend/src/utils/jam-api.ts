@@ -43,6 +43,8 @@ export interface IJobStatusResponse {
     progress: number;
     current: number;
     total: number;
+    added?: number;
+    skipped_duplicates?: number;
 }
 
 const BASE_URL = 'http://localhost:8000';
