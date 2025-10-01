@@ -106,59 +106,6 @@ def get_company_collection_by_id(
     )
 
 
-@router.post("/{collection_id}/companies", response_model=AddCompaniesResponse)
-def add_companies_to_collection(
-    collection_id: uuid.UUID,
-    request: AddCompaniesRequest,
-    db: Session = Depends(database.get_db),
-):
-    """Add individual companies to a collection (immediate processing)"""
-    # Verify collection exists
-    collection = db.query(database.CompanyCollection).get(collection_id)
-    if not collection:
-        raise HTTPException(status_code=404, detail="Collection not found")
-    
-    companies_added = 0
-    errors = []
-    
-    for company_id in request.company_ids:
-        try:
-            # Check if company exists
-            company = db.query(database.Company).get(company_id)
-            if not company:
-                errors.append(f"Company {company_id} not found")
-                continue
-            
-            # Check if association already exists
-            existing = db.query(database.CompanyCollectionAssociation).filter(
-                database.CompanyCollectionAssociation.company_id == company_id,
-                database.CompanyCollectionAssociation.collection_id == collection_id
-            ).first()
-            
-            if existing:
-                continue  # Skip if already exists
-            
-            # Create association (this will trigger the 100ms throttle)
-            association = database.CompanyCollectionAssociation(
-                company_id=company_id,
-                collection_id=collection_id
-            )
-            db.add(association)
-            db.commit()
-            companies_added += 1
-            
-            # Need this because original throttle wasn't working
-            time.sleep(0.1)
-            
-        except Exception as e:
-            errors.append(f"Failed to add company {company_id}: {str(e)}")
-    
-    return AddCompaniesResponse(
-        message=f"Added {companies_added} companies. Errors: {len(errors)}",
-        companies_added=companies_added
-    )
-
-
 @router.post("/{collection_id}/companies/bulk", response_model=AddCompaniesBulkResponse)
 def add_companies_bulk_to_collection(
     collection_id: uuid.UUID,
@@ -334,7 +281,7 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
                 except Exception:
                     pass
 
-            # Update progress every 10 companies or at the end for smoother UI updates
+            # Update progress every 10 companies
             if (i + 1) % 10 == 0 or (i + 1) == total:
                 progress = int((companies_added / total) * 100) if total > 0 else 100
                 job = db.query(database.Job).get(job_id)

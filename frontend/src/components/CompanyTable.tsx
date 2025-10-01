@@ -90,7 +90,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
     };
   }, []);
 
-  // Smart polling for job status
+  // Polling for job status
   useEffect(() => {
     if (activeJob && activeJob.status === 'running' && activeJob.job_id !== '__pending__') {
       const getPollingInterval = (totalCompanies: number) => {

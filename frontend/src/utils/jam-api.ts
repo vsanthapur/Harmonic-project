@@ -101,21 +101,6 @@ export async function getCollectionsMetadata(): Promise<ICollection[]> {
     }
 }
 
-export async function addCompaniesToCollection(
-    collectionId: string, 
-    companyIds: number[]
-): Promise<IAddCompaniesResponse> {
-    try {
-        const response = await axios.post(`${BASE_URL}/collections/${collectionId}/companies`, {
-            company_ids: companyIds
-        });
-        return response.data;
-    } catch (error) {
-        console.error('Error adding companies:', error);
-        throw error;
-    }
-}
-
 export async function addCompaniesBulkToCollection(
     collectionId: string, 
     companyIds: number[], 
