@@ -73,3 +73,13 @@ class CompanyCollectionAssociation(Base):
     company_id = Column(Integer, ForeignKey("companies.id"))
     collection_id = Column(UUID(as_uuid=True), ForeignKey("company_collections.id"))
 
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id: Column[uuid.UUID] = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    status = Column(String, index=True)  # "running", "completed", "failed"
+    progress = Column(Integer, default=0)  # 0-100 percentage
+    total = Column(Integer)  # Total companies to process
+    current = Column(Integer, default=0)  # Companies processed so far
+    email = Column(String, nullable=True)  # Optional email for notifications
+
