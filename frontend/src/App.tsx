@@ -5,7 +5,7 @@ import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { useEffect, useState } from "react";
 import { Button, Box, Alert } from "@mui/material";
 import CompanyTable from "./components/CompanyTable";
-import { getCollectionsMetadata } from "./utils/jam-api";
+import { getActiveJobs, getCollectionsMetadata, IActiveJobItem } from "./utils/jam-api";
 import useApi from "./utils/useApi";
 
 const darkTheme = createTheme({
@@ -16,12 +16,30 @@ const darkTheme = createTheme({
 
 function App() {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>();
+  const [activeJobs, setActiveJobs] = useState<IActiveJobItem[]>([]);
   const [showResetWarning, setShowResetWarning] = useState(false);
   const { data: collectionResponse } = useApi(() => getCollectionsMetadata());
 
   useEffect(() => {
     setSelectedCollectionId(collectionResponse?.[0]?.id);
   }, [collectionResponse]);
+  // Poll active jobs
+  useEffect(() => {
+    let timer: any;
+    const poll = async () => {
+      try {
+        const jobs = await getActiveJobs();
+        // Keep stable order by job_id
+        const sorted = [...jobs].sort((a, b) => a.job_id.localeCompare(b.job_id));
+        setActiveJobs(sorted);
+      } catch (e) {
+        // ignore transient errors
+      }
+      timer = setTimeout(poll, 2000);
+    };
+    poll();
+    return () => timer && clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (selectedCollectionId) {
@@ -99,6 +117,7 @@ function App() {
               {collectionResponse?.map((collection) => {
                 return (
                   <div
+                    key={collection.id}
                     className={`py-1 pl-4 hover:cursor-pointer hover:bg-orange-300 ${
                       selectedCollectionId === collection.id &&
                       "bg-orange-500 font-bold"
@@ -108,6 +127,40 @@ function App() {
                     }}
                   >
                     {collection.collection_name}
+                  </div>
+                );
+              })}
+            </div>
+            <p className=" font-bold border-b mt-6 mb-2 pb-2 text-left">
+              Running Jobs
+            </p>
+            <div className="flex flex-col gap-2 text-left">
+              {activeJobs.length === 0 && (
+                <div className="py-1 pl-4 text-gray-400">No active jobs</div>
+              )}
+              {activeJobs.map((job) => {
+                // try to resolve names from localStorage map
+                let fromName: string | undefined = job.from_collection_name;
+                let toName: string | undefined = job.to_collection_name;
+                try {
+                  const map = JSON.parse(localStorage.getItem('jamJobNames') || '{}');
+                  if (map && map[job.job_id]) {
+                    fromName = map[job.job_id].fromName || fromName;
+                    toName = map[job.job_id].toName || toName;
+                  }
+                } catch {}
+                return (
+                  <div key={job.job_id} className="py-1 pl-4 pr-2 flex items-center justify-between bg-gray-800 rounded">
+                    <div className="min-w-0">
+                      <div className="text-sm truncate" title={`${fromName || 'From'} → ${toName || 'To'}`}>
+                        {(fromName || 'From')} <span className="text-gray-400">→</span> {(toName || 'To')}
+                      </div>
+                      <div className="text-xs text-gray-400">{job.current.toLocaleString()} / {job.total.toLocaleString()} ({job.progress}%)</div>
+                    </div>
+                    <Button size="small" variant="outlined" onClick={() => {
+                      // broadcast event to open progress modal with initial job data
+                      window.dispatchEvent(new CustomEvent('open-job', { detail: { job: { ...job, from_collection_name: fromName, to_collection_name: toName } } }));
+                    }}>View</Button>
                   </div>
                 );
               })}

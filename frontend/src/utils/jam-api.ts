@@ -47,6 +47,16 @@ export interface IJobStatusResponse {
     skipped_duplicates?: number;
 }
 
+export interface IActiveJobItem {
+    job_id: string;
+    status: string;
+    progress: number;
+    current: number;
+    total: number;
+    from_collection_name?: string;
+    to_collection_name?: string;
+}
+
 const BASE_URL = 'http://localhost:8000';
 
 export async function getCompanies(offset?: number, limit?: number): Promise<ICompanyBatchResponse> {
@@ -127,6 +137,16 @@ export async function getJobStatus(jobId: string): Promise<IJobStatusResponse> {
         return response.data;
     } catch (error) {
         console.error('Error fetching job status:', error);
+        throw error;
+    }
+}
+
+export async function getActiveJobs(): Promise<IActiveJobItem[]> {
+    try {
+        const response = await axios.get(`${BASE_URL}/collections/jobs/active`);
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching active jobs:', error);
         throw error;
     }
 }

@@ -39,13 +39,13 @@ const SuccessModal = ({
         <Typography variant="body1" sx={{ mb: 2 }}>
           Successfully added <strong>{companiesAdded.toLocaleString()}</strong> companies from{' '}
           <strong>{fromCollection}</strong> to <strong>{toCollection}</strong>.
-          {typeof duplicates === 'number' && (
+          {typeof duplicates === 'number' && duplicates > 0 && (
             <> ({duplicates.toLocaleString()} were already in the collection)</>
           )}
         </Typography>
         
         <Typography variant="body2" color="text.secondary">
-          The companies have been added to the target collection and are now available there.
+          The companies have been added to {toCollection} and are now available there.
         </Typography>
       </DialogContent>
       <DialogActions>

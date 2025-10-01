@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -30,6 +30,13 @@ const TargetSelectionModal = ({
   currentCollectionName,
 }: TargetSelectionModalProps) => {
   const [targetCollectionId, setTargetCollectionId] = useState<string>('');
+
+  // Reset selection every time the modal is (re)opened
+  useEffect(() => {
+    if (open) {
+      setTargetCollectionId('');
+    }
+  }, [open]);
 
   const handleConfirm = () => {
     if (targetCollectionId) {

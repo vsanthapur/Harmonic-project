@@ -1,6 +1,6 @@
 import { DataGrid } from "@mui/x-data-grid";
 import { useEffect, useState } from "react";
-import { Button, Box, Typography, TextField } from "@mui/material";
+import { Button, Box, TextField } from "@mui/material";
 import { 
   getCollectionsById, 
   ICompany, 
@@ -21,7 +21,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
   const [pageSize, setPageSize] = useState(25);
   
   // Selection state
-  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isSelectAll, setIsSelectAll] = useState(false);
   const [isSelectN, setIsSelectN] = useState(false);
   const [selectNCount, setSelectNCount] = useState<number | ''>(100);
@@ -65,6 +65,29 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
   // Load collections for target selection
   useEffect(() => {
     getCollectionsMetadata().then(setCollections);
+  }, []);
+
+  // Listen for global open-job events from sidebar and open the progress modal for that job
+  useEffect(() => {
+    const handler = (e: any) => {
+      const job = e?.detail?.job as any;
+      if (!job) return;
+      // Initialize modal with known values from sidebar immediately
+      setActiveJob({
+        job_id: job.job_id,
+        status: job.status,
+        progress: job.progress,
+        current: job.current,
+        total: job.total,
+      } as any);
+      setShowProgressModal(true);
+    };
+    // @ts-ignore
+    window.addEventListener('open-job', handler);
+    return () => {
+      // @ts-ignore
+      window.removeEventListener('open-job', handler);
+    };
   }, []);
 
   // Smart polling for job status
@@ -133,18 +156,21 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
 
   // Handler functions
   const handleAddSelected = () => {
+    setTargetCollectionId('');
     setShowTargetModal(true);
   };
 
   const handleAddAll = () => {
     setIsSelectAll(true);
     setIsSelectN(false);
+    setTargetCollectionId('');
     setShowTargetModal(true);
   };
 
   const handleAddN = () => {
     setIsSelectN(true);
     setIsSelectAll(false);
+    setTargetCollectionId('');
     setShowTargetModal(true);
   };
 
@@ -157,7 +183,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         ? (total || 0)
         : isSelectN
           ? (typeof selectNCount === 'number' ? selectNCount : 0)
-          : selectedRows.length;
+          : selectedIds.length;
 
       // Estimate duration at 100ms per company
       const estimatedSeconds = count * 0.1;
@@ -197,12 +223,22 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         const nResponse = await getCollectionsById(props.selectedCollectionId, 0, n);
         companyIds = nResponse.companies.map(c => c.id);
       } else {
-        companyIds = selectedRows;
+        companyIds = selectedIds;
       }
 
       const result = await addCompaniesBulkToCollection(targetCollectionId, companyIds, undefined);
+      // Persist job names for sidebar display
+      try {
+        const fromName = collections.find(c => c.id === props.selectedCollectionId)?.collection_name || 'From';
+        const toName = collections.find(c => c.id === (targetCollectionId || ''))?.collection_name || 'To';
+        const key = 'jamJobNames';
+        const map = JSON.parse(localStorage.getItem(key) || '{}');
+        map[result.job_id] = { fromName, toName };
+        localStorage.setItem(key, JSON.stringify(map));
+      } catch {}
+
       setActiveJob({ job_id: result.job_id, status: result.status, progress: 0, current: 0, total: companyIds.length });
-      setSelectedRows([]);
+      setSelectedIds([]);
       setIsSelectAll(false);
       setIsSelectN(false);
     } catch (error) {
@@ -212,48 +248,51 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
 
   const handleEmailConfirm = async (email: string | null) => {
     try {
+      // Show progress immediately with expected total (no fetching delay)
+      const expectedCount = isSelectAll
+        ? (total || 0)
+        : isSelectN
+          ? (typeof selectNCount === 'number' ? selectNCount : 0)
+          : selectedIds.length;
+      setShowEmailModal(false);
+      setActiveJob({ job_id: '__pending__', status: 'running', progress: 0, current: 0, total: expectedCount } as any);
+      setShowProgressModal(true);
+
+      // Now gather IDs in the background
       let companyIds: number[];
-      
       if (isSelectAll) {
-        // For "Add All", we need to get ALL company IDs from the collection
         const allCompanyIds: number[] = [];
         let offset = 0;
         const batchSize = 1000;
-        
         while (true) {
           const batchResponse = await getCollectionsById(props.selectedCollectionId, offset, batchSize);
           const batchIds = batchResponse.companies.map(c => c.id);
           allCompanyIds.push(...batchIds);
-          
-          if (batchIds.length < batchSize) {
-            break; // No more companies
-          }
+          if (batchIds.length < batchSize) break;
           offset += batchSize;
         }
-        
         companyIds = allCompanyIds;
       } else if (isSelectN) {
-        // For "Add N", we need to get the first N company IDs from the collection
         const n = typeof selectNCount === 'number' ? selectNCount : 0;
         const nResponse = await getCollectionsById(props.selectedCollectionId, 0, n);
         companyIds = nResponse.companies.map(c => c.id);
       } else {
-        companyIds = selectedRows;
+        companyIds = selectedIds;
       }
-      // Show progress immediately with known total
-      setShowEmailModal(false);
-      setActiveJob({
-        job_id: '__pending__',
-        status: 'running',
-        progress: 0,
-        current: 0,
-        total: companyIds.length,
-      } as any);
-      setShowProgressModal(true);
 
       const result = await addCompaniesBulkToCollection(targetCollectionId, companyIds, email || undefined);
       
       console.log('Setting active job:', result);
+      // Persist job names for sidebar display
+      try {
+        const fromName = collections.find(c => c.id === props.selectedCollectionId)?.collection_name || 'From';
+        const toName = collections.find(c => c.id === (targetCollectionId || ''))?.collection_name || 'To';
+        const key = 'jamJobNames';
+        const map = JSON.parse(localStorage.getItem(key) || '{}');
+        map[result.job_id] = { fromName, toName };
+        localStorage.setItem(key, JSON.stringify(map));
+      } catch {}
+
       setActiveJob({
         job_id: result.job_id,
         status: result.status,
@@ -263,7 +302,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
       });
       
       // job started, progress modal already visible
-      setSelectedRows([]);
+      setSelectedIds([]);
       setIsSelectAll(false);
       setIsSelectN(false);
     } catch (error) {
@@ -278,9 +317,9 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         <Button 
           variant="outlined"
           onClick={handleAddSelected}
-          disabled={selectedRows.length === 0}
+          disabled={selectedIds.length === 0}
         >
-          Add Selected ({selectedRows.length})
+          Add Selected ({selectedIds.length})
         </Button>
         
         <Button 
@@ -318,23 +357,14 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
           </Button>
         </Box>
         
-        {activeJob && (
-          <Button 
-            variant="outlined"
-            color="primary"
-            onClick={() => {
-              console.log('Opening progress modal, activeJob:', activeJob);
-              setShowProgressModal(true);
-            }}
+        {selectedIds.length > 0 && (
+          <Button
+            variant="text"
+            color="secondary"
+            onClick={() => setSelectedIds([])}
           >
-            View Progress ({activeJob.progress}%)
+            Clear selection
           </Button>
-        )}
-        
-        {selectedRows.length > 0 && (
-          <Typography variant="body2" color="text.secondary">
-            {selectedRows.length} companies selected
-          </Typography>
         )}
       </Box>
 
@@ -353,12 +383,23 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
               paginationModel: { page: 0, pageSize: 25 },
             },
           }}
-          rowCount={total}
+          rowCount={total || 0}
           pagination
           checkboxSelection
           paginationMode="server"
+          rowSelectionModel={selectedIds}
           onRowSelectionModelChange={(newSelection) => {
-            setSelectedRows(newSelection as number[]);
+            const currentPageIds = response.map((c) => c.id);
+            const currentSet = new Set(selectedIds);
+            const pageSelection = new Set(newSelection as number[]);
+            for (const id of currentPageIds) {
+              if (pageSelection.has(id)) {
+                currentSet.add(id);
+              } else {
+                currentSet.delete(id);
+              }
+            }
+            setSelectedIds(Array.from(currentSet));
           }}
           onPaginationModelChange={(newMeta) => {
             setPageSize(newMeta.pageSize);
@@ -373,7 +414,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         onClose={() => setShowTargetModal(false)}
         onConfirm={handleTargetConfirm}
         collections={collections.filter(c => c.id !== props.selectedCollectionId)}
-        selectedCount={isSelectAll ? (total || 0) : isSelectN ? (typeof selectNCount === 'number' ? selectNCount : 0) : selectedRows.length}
+        selectedCount={isSelectAll ? (total || 0) : isSelectN ? (typeof selectNCount === 'number' ? selectNCount : 0) : selectedIds.length}
         currentCollectionName={collections.find(c => c.id === props.selectedCollectionId)?.collection_name || 'Current Collection'}
       />
 
@@ -381,7 +422,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         open={showEmailModal}
         onClose={() => setShowEmailModal(false)}
         onConfirm={handleEmailConfirm}
-        companyCount={isSelectAll ? (total || 0) : isSelectN ? (typeof selectNCount === 'number' ? selectNCount : 0) : selectedRows.length}
+        companyCount={isSelectAll ? (total || 0) : isSelectN ? (typeof selectNCount === 'number' ? selectNCount : 0) : selectedIds.length}
         isAddAll={isSelectAll || isSelectN}
       />
 
@@ -391,7 +432,8 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         current={activeJob?.current || 0}
         total={activeJob?.total || 0}
         added={(activeJob as any)?.added}
-        skippedDuplicates={(activeJob as any)?.skipped_duplicates}
+        fromName={collections.find(c => c.id === props.selectedCollectionId)?.collection_name}
+        toName={collections.find(c => c.id === (targetCollectionId || ''))?.collection_name}
         status={activeJob?.status || 'running'}
         onCancel={() => {
           setShowProgressModal(false);

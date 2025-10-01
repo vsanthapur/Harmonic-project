@@ -228,6 +228,35 @@ def get_job_status(
     )
 
 
+class ActiveJobItem(BaseModel):
+    job_id: uuid.UUID
+    status: str
+    progress: int
+    current: int
+    total: int
+
+
+@router.get("/jobs/active", response_model=list[ActiveJobItem])
+def list_active_jobs(db: Session = Depends(database.get_db)):
+    jobs = (
+        db.query(database.Job)
+        .filter(database.Job.status.in_(["running"]))
+        .order_by(database.Job.id)
+    )
+    items: list[ActiveJobItem] = []
+    for job in jobs:
+        items.append(
+            ActiveJobItem(
+                job_id=job.id,
+                status=job.status,
+                progress=job.progress,
+                current=job.current,
+                total=job.total,
+            )
+        )
+    return items
+
+
 def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection_id: uuid.UUID, email: Optional[str] = None):
     """Background task to process bulk company addition with throttle respect"""
     db = database.SessionLocal()
