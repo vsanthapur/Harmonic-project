@@ -35,7 +35,7 @@ function App() {
       } catch (e) {
         // ignore transient errors
       }
-      timer = setTimeout(poll, 10000);
+      timer = setTimeout(poll, 7000);
     };
     poll();
     return () => timer && clearTimeout(timer);
