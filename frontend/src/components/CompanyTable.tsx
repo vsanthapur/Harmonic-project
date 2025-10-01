@@ -13,6 +13,7 @@ import {
 import TargetSelectionModal from "./TargetSelectionModal";
 import EmailModal from "./EmailModal";
 import ProgressModal from "./ProgressModal";
+import SuccessModal from "./SuccessModal";
 
 const CompanyTable = (props: { selectedCollectionId: string }) => {
   const [response, setResponse] = useState<ICompany[]>([]);
@@ -23,11 +24,13 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
   // Selection state
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [isSelectAll, setIsSelectAll] = useState(false);
+  const [targetCollectionId, setTargetCollectionId] = useState<string>('');
   
   // Modal state
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showProgressModal, setShowProgressModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   
   // Collections for target selection
   const [collections, setCollections] = useState<Array<{ id: string; collection_name: string }>>([]);
@@ -35,6 +38,13 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
   // Job tracking
   const [activeJob, setActiveJob] = useState<IJobStatusResponse | null>(null);
   const [jobPollingInterval, setJobPollingInterval] = useState<number | null>(null);
+  
+  // Success modal data
+  const [successData, setSuccessData] = useState<{
+    companiesAdded: number;
+    fromCollection: string;
+    toCollection: string;
+  } | null>(null);
 
   useEffect(() => {
     getCollectionsById(props.selectedCollectionId, offset, pageSize).then(
@@ -75,8 +85,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
           setActiveJob(status);
           
           if (status.status === 'completed') {
-            setShowProgressModal(false);
-            setActiveJob(null);
+            setActiveJob(status);
             if (jobPollingInterval) {
               clearInterval(jobPollingInterval);
               setJobPollingInterval(null);
@@ -117,14 +126,62 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
 
   const handleAddAll = () => {
     setIsSelectAll(true);
-    setShowEmailModal(true);
+    setShowTargetModal(true);
   };
 
   const handleTargetConfirm = async (targetCollectionId: string) => {
     try {
-      const result = await addCompaniesToCollection(targetCollectionId, selectedRows);
+      let companyIds: number[];
+      
+      if (isSelectAll) {
+        // For "Add All", we need to get ALL company IDs from the collection
+        // We'll fetch them in batches to get all companies
+        const allCompanyIds: number[] = [];
+        let offset = 0;
+        const batchSize = 1000;
+        
+        while (true) {
+          const batchResponse = await getCollectionsById(props.selectedCollectionId, offset, batchSize);
+          const batchIds = batchResponse.companies.map(c => c.id);
+          allCompanyIds.push(...batchIds);
+          
+          if (batchIds.length < batchSize) {
+            break; // No more companies
+          }
+          offset += batchSize;
+        }
+        
+        companyIds = allCompanyIds;
+      } else {
+        companyIds = selectedRows;
+      }
+      
+      // Check if this is a large operation that needs email modal
+      if (companyIds.length > 1000) {
+        // Store the target collection and show email modal
+        setTargetCollectionId(targetCollectionId);
+        setShowTargetModal(false);
+        setShowEmailModal(true);
+        return;
+      }
+      
+      // Small operation - do it immediately
+      const result = await addCompaniesToCollection(targetCollectionId, companyIds);
       console.log('Companies added:', result);
+      
+      // Show success modal
+      const fromCollection = collections.find(c => c.id === props.selectedCollectionId)?.collection_name || 'Current Collection';
+      const toCollection = collections.find(c => c.id === targetCollectionId)?.collection_name || 'Target Collection';
+      
+      setSuccessData({
+        companiesAdded: result.companies_added,
+        fromCollection,
+        toCollection
+      });
+      setShowSuccessModal(true);
+      
       setSelectedRows([]);
+      setIsSelectAll(false);
       setShowTargetModal(false);
     } catch (error) {
       console.error('Error adding companies:', error);
@@ -133,13 +190,36 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
 
   const handleEmailConfirm = async (email: string | null) => {
     try {
-      const companyIds = isSelectAll ? response.map(c => c.id) : selectedRows;
+      let companyIds: number[];
+      
+      if (isSelectAll) {
+        // For "Add All", we need to get ALL company IDs from the collection
+        const allCompanyIds: number[] = [];
+        let offset = 0;
+        const batchSize = 1000;
+        
+        while (true) {
+          const batchResponse = await getCollectionsById(props.selectedCollectionId, offset, batchSize);
+          const batchIds = batchResponse.companies.map(c => c.id);
+          allCompanyIds.push(...batchIds);
+          
+          if (batchIds.length < batchSize) {
+            break; // No more companies
+          }
+          offset += batchSize;
+        }
+        
+        companyIds = allCompanyIds;
+      } else {
+        companyIds = selectedRows;
+      }
       const result = await addCompaniesBulkToCollection(
-        props.selectedCollectionId, 
+        targetCollectionId, 
         companyIds, 
         email || undefined
       );
       
+      console.log('Setting active job:', result);
       setActiveJob({
         job_id: result.job_id,
         status: result.status,
@@ -150,7 +230,10 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
       
       setShowEmailModal(false);
       setShowProgressModal(true);
+      console.log('Progress modal should be showing now');
       setSelectedRows([]);
+      setIsSelectAll(false);
+      setTargetCollectionId('');
     } catch (error) {
       console.error('Error starting bulk operation:', error);
     }
@@ -174,6 +257,19 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         >
           Add All ({total?.toLocaleString() || 0})
         </Button>
+        
+        {activeJob && (
+          <Button 
+            variant="outlined"
+            color="primary"
+            onClick={() => {
+              console.log('Opening progress modal, activeJob:', activeJob);
+              setShowProgressModal(true);
+            }}
+          >
+            View Progress ({activeJob.progress}%)
+          </Button>
+        )}
         
         {selectedRows.length > 0 && (
           <Typography variant="body2" color="text.secondary">
@@ -216,8 +312,8 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         open={showTargetModal}
         onClose={() => setShowTargetModal(false)}
         onConfirm={handleTargetConfirm}
-        collections={collections}
-        selectedCount={selectedRows.length}
+        collections={collections.filter(c => c.id !== props.selectedCollectionId)}
+        selectedCount={isSelectAll ? (total || 0) : selectedRows.length}
         currentCollectionName={collections.find(c => c.id === props.selectedCollectionId)?.collection_name || 'Current Collection'}
       />
 
@@ -235,8 +331,26 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         current={activeJob?.current || 0}
         total={activeJob?.total || 0}
         status={activeJob?.status || 'running'}
-        onCancel={() => setShowProgressModal(false)}
+        onCancel={() => {
+          setShowProgressModal(false);
+          if (activeJob?.status === 'completed') {
+            setActiveJob(null);
+          }
+        }}
       />
+
+      {successData && (
+        <SuccessModal
+          open={showSuccessModal}
+          onClose={() => {
+            setShowSuccessModal(false);
+            setSuccessData(null);
+          }}
+          companiesAdded={successData.companiesAdded}
+          fromCollection={successData.fromCollection}
+          toCollection={successData.toCollection}
+        />
+      )}
     </div>
   );
 };

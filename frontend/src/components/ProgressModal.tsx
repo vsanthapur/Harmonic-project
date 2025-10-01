@@ -52,14 +52,18 @@ const ProgressModal = ({
             This may take several minutes. You can close this dialog and check back later.
           </Typography>
         )}
+        
+        {status === 'completed' && (
+          <Typography variant="body2" color="success.main" sx={{ mt: 2 }}>
+            ✅ Operation completed successfully!
+          </Typography>
+        )}
       </DialogContent>
-      {onCancel && (
-        <Box sx={{ p: 2, pt: 0 }}>
-          <Button onClick={onCancel} variant="outlined" fullWidth>
-            Close (operation continues in background)
-          </Button>
-        </Box>
-      )}
+      <Box sx={{ p: 2, pt: 0 }}>
+        <Button onClick={onCancel} variant="outlined" fullWidth>
+          {status === 'completed' ? 'Close' : 'Close (operation continues in background)'}
+        </Button>
+      </Box>
     </Dialog>
   );
 };

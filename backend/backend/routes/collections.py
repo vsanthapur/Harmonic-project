@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from backend.db import database
@@ -242,6 +242,10 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
             db.commit()
             companies_added += 1
             
+            # Log progress every 100 companies
+            if companies_added % 100 == 0:
+                print(f"Job {job_id}: Added {companies_added} companies so far...")
+            
             # Update progress every 100 companies or at the end
             if (i + 1) % 100 == 0 or (i + 1) == total:
                 progress = int(((i + 1) / total) * 100)
@@ -279,3 +283,69 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
         raise
     finally:
         db.close()
+
+
+@router.post("/reset-db")
+def reset_database():
+    """Reset database to original state (for testing)"""
+    try:
+        db = database.SessionLocal()
+        
+        # Clear associations and jobs
+        db.execute(text("TRUNCATE TABLE company_collection_associations CASCADE;"))
+        db.execute(text("TRUNCATE TABLE jobs CASCADE;"))
+        
+        # Delete the "Linked Company List" that shouldn't exist
+        db.execute(text("DELETE FROM company_collections WHERE collection_name = 'Linked Company List';"))
+        db.commit()
+        
+        # Get the collections
+        my_list = db.query(database.CompanyCollection).filter(
+            database.CompanyCollection.collection_name == "My List"
+        ).first()
+        
+        companies_to_ignore_list = db.query(database.CompanyCollection).filter(
+            database.CompanyCollection.collection_name == "Companies to Ignore List"
+        ).first()
+        
+        # Create "Liked Companies List" if it doesn't exist
+        liked_companies_list = db.query(database.CompanyCollection).filter(
+            database.CompanyCollection.collection_name == "Liked Companies List"
+        ).first()
+        
+        if not liked_companies_list:
+            liked_companies_list = database.CompanyCollection(collection_name="Liked Companies List")
+            db.add(liked_companies_list)
+            db.commit()
+        
+        # Get companies to add to collections
+        all_companies = db.query(database.Company).all()
+        
+        # Restore original associations according to main.py
+        # My List: All 10,000 companies
+        for i in range(len(all_companies)):
+            association = database.CompanyCollectionAssociation(
+                company_id=all_companies[i].id, collection_id=my_list.id
+            )
+            db.add(association)
+        
+        # Liked Companies List: 10 companies
+        for i in range(min(10, len(all_companies))):
+            association = database.CompanyCollectionAssociation(
+                company_id=all_companies[i].id, collection_id=liked_companies_list.id
+            )
+            db.add(association)
+        
+        # Companies to Ignore List: 50 companies
+        for i in range(min(50, len(all_companies))):
+            association = database.CompanyCollectionAssociation(
+                company_id=all_companies[i].id, collection_id=companies_to_ignore_list.id
+            )
+            db.add(association)
+        
+        db.commit()
+        db.close()
+        
+        return {"message": "Database reset successfully - restored to original state"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset database: {str(e)}")
