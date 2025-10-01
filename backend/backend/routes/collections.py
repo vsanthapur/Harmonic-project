@@ -13,7 +13,6 @@ from backend.routes.companies import (
     CompanyBatchOutput,
     fetch_companies_with_liked,
 )
-from backend.services.email_service import email_service
 
 router = APIRouter(
     prefix="/collections",
@@ -148,7 +147,7 @@ def add_companies_to_collection(
             db.commit()
             companies_added += 1
             
-            # Ensure 100ms throttle even for immediate adds
+            # Need this because original throttle wasn't working
             time.sleep(0.1)
             
         except Exception as e:
@@ -353,18 +352,13 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
         except Exception:
             pass
         
-        # Send email notification if provided
+        # Mock email notification
         if email:
-            # Get collection name for email
             collection = db.query(database.CompanyCollection).get(collection_id)
-            collection_name = collection.collection_name if collection else None
-            
-            email_service.send_completion_email(
-                to_email=email,
-                job_id=str(job_id),
-                collection_id=str(collection_id),
-                companies_added=companies_added,
-                collection_name=collection_name
+            collection_name = collection.collection_name if collection else str(collection_id)
+            print(
+                f"[EmailMock] To: {email} | Job: {job_id} | Collection: {collection_name} | Added: {companies_added}",
+                flush=True,
             )
             
     except Exception as e:

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -27,6 +27,14 @@ const EmailModal = ({
 }: EmailModalProps) => {
   const [email, setEmail] = useState<string>('');
   const [skipEmail, setSkipEmail] = useState<boolean>(false);
+
+  // Reset state each time the modal is opened
+  useEffect(() => {
+    if (open) {
+      setEmail('');
+      setSkipEmail(false);
+    }
+  }, [open]);
 
   const estimatedTime = Math.ceil(companyCount * 0.1 / 60); // minutes
 

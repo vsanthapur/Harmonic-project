@@ -24,6 +24,8 @@ export interface IAddCompaniesRequest {
 export interface IAddCompaniesBulkRequest {
     company_ids: number[];
     email?: string;
+    source_collection_id?: string;
+    limit_n?: number;
 }
 
 export interface IAddCompaniesResponse {
@@ -117,13 +119,18 @@ export async function addCompaniesToCollection(
 export async function addCompaniesBulkToCollection(
     collectionId: string, 
     companyIds: number[], 
-    email?: string
+    email?: string,
+    sourceCollectionId?: string,
+    limitN?: number
 ): Promise<IAddCompaniesBulkResponse> {
     try {
-        const response = await axios.post(`${BASE_URL}/collections/${collectionId}/companies/bulk`, {
+        const payload: any = {
             company_ids: companyIds,
-            email: email
-        });
+            email: email,
+        };
+        if (sourceCollectionId) payload.source_collection_id = sourceCollectionId;
+        if (typeof limitN === 'number') payload.limit_n = limitN;
+        const response = await axios.post(`${BASE_URL}/collections/${collectionId}/companies/bulk`, payload);
         return response.data;
     } catch (error) {
         console.error('Error adding companies in bulk:', error);

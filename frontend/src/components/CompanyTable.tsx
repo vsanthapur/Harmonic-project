@@ -92,7 +92,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
 
   // Smart polling for job status
   useEffect(() => {
-    if (activeJob && activeJob.status === 'running') {
+    if (activeJob && activeJob.status === 'running' && activeJob.job_id !== '__pending__') {
       const getPollingInterval = (totalCompanies: number) => {
         const estimatedTime = totalCompanies * 0.1; // 100ms per company
         
@@ -205,28 +205,20 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
       } as any);
       setShowProgressModal(true);
 
+      // Use server-side selection for Add All / Add N, fall back to explicit IDs for selected rows
       let companyIds: number[] = [];
+      let sourceCollectionId: string | undefined = undefined;
+      let limitN: number | undefined = undefined;
       if (isSelectAll) {
-        const allCompanyIds: number[] = [];
-        let offset = 0;
-        const batchSize = 1000;
-        while (true) {
-          const batchResponse = await getCollectionsById(props.selectedCollectionId, offset, batchSize);
-          const batchIds = batchResponse.companies.map(c => c.id);
-          allCompanyIds.push(...batchIds);
-          if (batchIds.length < batchSize) break;
-          offset += batchSize;
-        }
-        companyIds = allCompanyIds;
+        sourceCollectionId = props.selectedCollectionId;
       } else if (isSelectN) {
-        const n = typeof selectNCount === 'number' ? selectNCount : 0;
-        const nResponse = await getCollectionsById(props.selectedCollectionId, 0, n);
-        companyIds = nResponse.companies.map(c => c.id);
+        sourceCollectionId = props.selectedCollectionId;
+        limitN = typeof selectNCount === 'number' ? selectNCount : 0;
       } else {
         companyIds = selectedIds;
       }
 
-      const result = await addCompaniesBulkToCollection(targetCollectionId, companyIds, undefined);
+      const result = await addCompaniesBulkToCollection(targetCollectionId, companyIds, undefined, sourceCollectionId, limitN);
       // Persist job names for sidebar display
       try {
         const fromName = collections.find(c => c.id === props.selectedCollectionId)?.collection_name || 'From';
@@ -237,7 +229,8 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         localStorage.setItem(key, JSON.stringify(map));
       } catch {}
 
-      setActiveJob({ job_id: result.job_id, status: result.status, progress: 0, current: 0, total: companyIds.length });
+      const finalTotal = sourceCollectionId ? (typeof limitN === 'number' && limitN > 0 ? limitN : count) : companyIds.length;
+      setActiveJob({ job_id: result.job_id, status: result.status, progress: 0, current: 0, total: finalTotal });
       setSelectedIds([]);
       setIsSelectAll(false);
       setIsSelectN(false);
@@ -259,28 +252,20 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
       setShowProgressModal(true);
 
       // Now gather IDs in the background
-      let companyIds: number[];
+      // Use server-side selection for Add All / Add N
+      let companyIds: number[] = [];
+      let sourceCollectionId: string | undefined = undefined;
+      let limitN: number | undefined = undefined;
       if (isSelectAll) {
-        const allCompanyIds: number[] = [];
-        let offset = 0;
-        const batchSize = 1000;
-        while (true) {
-          const batchResponse = await getCollectionsById(props.selectedCollectionId, offset, batchSize);
-          const batchIds = batchResponse.companies.map(c => c.id);
-          allCompanyIds.push(...batchIds);
-          if (batchIds.length < batchSize) break;
-          offset += batchSize;
-        }
-        companyIds = allCompanyIds;
+        sourceCollectionId = props.selectedCollectionId;
       } else if (isSelectN) {
-        const n = typeof selectNCount === 'number' ? selectNCount : 0;
-        const nResponse = await getCollectionsById(props.selectedCollectionId, 0, n);
-        companyIds = nResponse.companies.map(c => c.id);
+        sourceCollectionId = props.selectedCollectionId;
+        limitN = typeof selectNCount === 'number' ? selectNCount : 0;
       } else {
         companyIds = selectedIds;
       }
 
-      const result = await addCompaniesBulkToCollection(targetCollectionId, companyIds, email || undefined);
+      const result = await addCompaniesBulkToCollection(targetCollectionId, companyIds, email || undefined, sourceCollectionId, limitN);
       
       console.log('Setting active job:', result);
       // Persist job names for sidebar display
@@ -293,13 +278,8 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
         localStorage.setItem(key, JSON.stringify(map));
       } catch {}
 
-      setActiveJob({
-        job_id: result.job_id,
-        status: result.status,
-        progress: 0,
-        current: 0,
-        total: companyIds.length
-      });
+      const finalTotalEmail = sourceCollectionId ? expectedCount : companyIds.length;
+      setActiveJob({ job_id: result.job_id, status: result.status, progress: 0, current: 0, total: finalTotalEmail });
       
       // job started, progress modal already visible
       setSelectedIds([]);
@@ -353,7 +333,7 @@ const CompanyTable = (props: { selectedCollectionId: string }) => {
             onClick={handleAddN}
             disabled={!(typeof selectNCount === 'number') || selectNCount <= 0}
           >
-            Add N ({typeof selectNCount === 'number' ? selectNCount : 0})
+            Add ({typeof selectNCount === 'number' ? selectNCount : 0})
           </Button>
         </Box>
         
