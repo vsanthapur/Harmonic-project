@@ -271,7 +271,7 @@ def process_bulk_operation(job_id: uuid.UUID, company_ids: List[int], collection
             db.commit()
             companies_added += 1
             
-            # Add explicit 100ms sleep to ensure throttle compliance
+            # For some reason the throttle isn't working so I added this here
             time.sleep(0.1)
             
             # Log progress every 100 companies (and once at first add)
