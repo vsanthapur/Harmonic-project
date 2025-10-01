@@ -1,11 +1,5 @@
 # Welcome to the Harmonic Fullstack Jam! :D
 
-Please familiarize yourself with any docs provided to you before continuing.
+Loom Demo: https://www.loom.com/share/bd1621b42f8a44f6be330d24bcc46491?sid=994f6629-163f-48e4-be00-a48ecba9f920
 
-In this repo, you'll find 2 deployable services:
-1. Backend - dockerized deployable that will spin up a Python backend with FastAPI, Postgres SQL DB and some seeded data.
-2. Frontend - locally deployable app via Vite with TypeScript/React
-
-Please refer to the individual READMEs in the respective repos to get started!
-
-Enjoy :D
+Write up: https://www.notion.so/Harmonic-Project-Writeup-27f20ec54a70805f8ea0fb99a041113d?source=copy_link
